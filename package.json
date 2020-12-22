@@ -28,7 +28,8 @@
     "cheerio": "^1.0.0-rc.3",
     "node-fetch": "^2.6.1",
     "normalize-html-whitespace": "^1.0.0",
-    "tough-cookie": "^4.0.0"
+    "tough-cookie": "^4.0.0",
+    "xlsx": "^0.16.9"
   },
   "devDependencies": {
     "@babel/core": "^7.9.0",

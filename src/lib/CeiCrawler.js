@@ -2,6 +2,7 @@ const StockHistoryCrawler = require('./StockHistoryCrawler');
 const DividendsCrawler = require('./DividendsCrawler');
 const WalletCrawler = require('./WalletCrawler');
 const TreasureCrawler = require('./TreasureCrawler');
+const StatementCrawler = require('./StatementCrawler');
 const typedefs = require("./typedefs");
 const { CeiCrawlerError, CeiErrorTypes } = require('./CeiCrawlerError');
 const FetchCookieManager = require('./FetchCookieManager');
@@ -50,6 +51,7 @@ class CeiCrawler {
         if (!this.options.trace) this.options.trace = false;
         if (!this.options.navigationTimeout) this.options.navigationTimeout = 30000;
         if (!this.options.loginTimeout) this.options.loginTimeout = 150000;
+        if (!this.options.downloadedFolder) this.options.downloadedFolder = '/tmp';
     }
 
     async login() {
@@ -201,6 +203,25 @@ class CeiCrawler {
     async getTreasureOptions() {
         await this._login();
         return await TreasureCrawler.getTreasureOptions(this._cookieManager, this._options);
+    }
+
+    /**
+     * Returns the statement for each account in CEI
+     * @param {Date} [date] - The date to get the wallet
+     * @returns {Promise<typedefs.StatementItem[]>} - List of available Statement information
+     */
+    async getStatement(date) {
+        await this._login();
+        return await StatementCrawler.getStatement(this._cookieManager, this.options, date);
+    }
+
+    /**
+     * Returns the options for the treasure
+     * @returns {Promise<typedefs.StatementOptions>} - Options for statement
+     */
+    async getStatementOptions() {
+        await this._login();
+        return await StatementCrawler.getStatementOptions(this._cookieManager, this._options);
     }
 
 }

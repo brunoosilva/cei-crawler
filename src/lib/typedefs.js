@@ -172,4 +172,24 @@
  * @property {InstitutionOption[]} institutions - Array of available institutions with its accounts
  */
 
+/**
+ * @typedef StatementItem
+ * @property {String} code - The code of the national treasury
+ * @property {String} expirationDate - The expiration date of that item
+ * @property {String} investedValue - The value invested
+ * @property {String} grossValue - The gross value now
+ * @property {Number} netValue - The net value now
+ * @property {Number} quantity - The quantity of that treasury
+ * @property {Number} blocked - The quantity blocked of that treasury
+ * @property {TreasureTransactionItem[]} transactions - The transactions of that treasury
+ * @memberof typdefs
+ */
+
+/**
+ * @typedef StatementOptions
+ * @property {String} minDate - Minimum date which data is available
+ * @property {String} maxDate - Maximum date which data is available
+ * @property {InstitutionOption[]} institutions - Array of available institutions with its accounts
+ */
+
 exports.unused = {};

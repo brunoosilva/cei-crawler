@@ -1,3 +1,7 @@
+const path = require('path');
+const fs = require('fs');
+const XlsxParser = require('xlsx');
+
 class CeiUtils {
     /**
      * Returns a date in the format dd/MM/yyyy for input at CEI
@@ -6,7 +10,7 @@ class CeiUtils {
     static getDateForInput(date) {
         return `${date.getDate().toString().padStart(2, "0")}/${(date.getMonth() + 1)
             .toString()
-            .padStart(2, "0")}/${date.getFullYear()}`;
+            .padStart(2, "0")}/${date.getFullYear()} 00:00:00`;
     }
 
     /**
@@ -26,7 +30,7 @@ class CeiUtils {
     static parseTableTypes(tableData, tableDefinition) {
         // Helper function
         const parseValue = (value, type) => {
-            if (type === "string") return value;
+            if (type === "string") return String(value).replace(/\s+/g,' ').trim();
             if (type === "int") return parseInt(value.replace(".", ""));
             if (type === "float")
                 return parseFloat(value.replace(".", "").replace(",", "."));
@@ -34,6 +38,7 @@ class CeiUtils {
                 return value === "01/01/0001"
                     ? null
                     : new Date(value.split("/").reverse());
+            return value;
         };
 
         return tableData.map((row) =>
@@ -42,6 +47,84 @@ class CeiUtils {
                 return p;
             }, {})
         );
+    }
+
+    /**
+     * Parse the sheet data to its type configuration
+     * @param {String} fileName - The name of the file to be downloaded
+     * @param {String} rowKey - The row key for found results
+     * @param {String} startText - The first text to find the beginning of the loop
+     * @param {String} endText - The last text to find the beginning of the loop
+     * @param {Object} header - Object defining the sheet types in format (column, type)
+     * @param {Boolean} skipHeader - Skip header
+     */
+    static parseSheetData(fileName, rowKey, startText, endText, header, skipHeader = false) {
+        const workbook = XlsxParser.readFile(fileName);
+        const first_sheet_name = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[first_sheet_name];
+        const rows = XlsxParser.utils.sheet_to_json(worksheet);
+
+        const rowBegin = rows.findIndex(row => row[rowKey] === startText);
+        const rowEnd = rows.findIndex(row => row[rowKey] === endText);
+
+        if (rowBegin === -1 || rowEnd === -1) {
+            return [];
+        }
+
+        const refDateText = 'RESUMO DOS SALDOS EM ';
+        const refDateKey = '__EMPTY_5';
+        const refDateFound = rows.find(row => row[refDateKey] && row[refDateKey].startsWith(refDateText));
+        const refDate = refDateFound ? refDateFound[refDateKey].replace(refDateText, '').trim() : null;
+
+        const headers = Object.keys(header);
+
+        const skipIndex = skipHeader ? 2 : 1;
+        const items = [];
+
+        for(let rowIndex=rowBegin+skipIndex; rowIndex<rowEnd; rowIndex++) {
+            const row = rows[rowIndex];
+
+            const item = Object.keys(row)
+                .map((rowItem, key) => ({
+                    [headers[key]]: row[rowItem],
+                }))
+                .reduce((itemA, itemB) => ({...itemA, ...itemB}), {});
+
+            items.push({
+                ...item,
+                refDate,
+            });
+        }
+
+        return CeiUtils.parseTableTypes(items, header);
+    }
+
+    /**
+     * Save file
+     * @param {typedefs.CeiCrawlerOptions} [options] - Options for the crawler
+     * @param {String} fileName - The name of the file to be downloaded
+     * @param {String} fileContent - The file content
+     */
+    static saveFile(options, fileName, fileContent) {
+        return new Promise((resolve, reject) => {
+            const filePath = path.join(options.downloadedFolder, fileName);
+            const fileStream = fs.createWriteStream(filePath);
+            fileContent.pipe(fileStream);
+            fileContent.on("error", (err) => reject(err));
+            fileStream.on("finish", () => resolve(filePath));
+        });
+    }
+
+    /**
+     * Remove file
+     * @param {typedefs.CeiCrawlerOptions} [options] - Options for the crawler
+     * @param {String} fileName - The name of the file to be downloaded
+     */
+    static removeFile(options, fileName) {
+        const filePath = path.join(options.downloadedFolder, fileName);
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }
     }
 
     /**
@@ -144,7 +227,7 @@ class CeiUtils {
      * @param {string} responseTxt - Response in text format
      * @returns {Array<Object>} - List of fields and their respective values
      */
-    static extractUpdateForm(responseTxt) {
+    static extractUpdateForm(responseTxt, extractScript = false) {
         return responseTxt
             .split("\n")
             .slice(-1)[0]
@@ -152,7 +235,7 @@ class CeiUtils {
             .replace(/\|\|/g, "|")
             .split("|")
             .map((str, idx, array) => {
-                if (str.includes("hiddenField")) {
+                if (str.includes("hiddenField") || (extractScript && str.includes("ScriptContentNoTags"))) {
                     return {
                         id: array[idx + 1],
                         value: array[idx + 2],
