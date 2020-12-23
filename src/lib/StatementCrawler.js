@@ -132,10 +132,11 @@ class StatementCrawler {
                 console.log(`Selecting institution ${institution.label} (${institution.value})`)
 
             domPage(PAGE.SELECT_INSTITUTION).attr('value', institution.value);
+            domPage('#__EVENTTARGET').attr('value', 'ctl00$ContentPlaceHolder1$ddlAgentes');
+            domPage('#__EVENTARGUMENT').attr('value', '');
 
             const formDataInstitution = CeiUtils.extractFormDataFromDOM(domPage, FETCH_FORMS.STATEMENT_INSTITUTION, {
                 ctl00$ContentPlaceHolder1$scptManager: 'ctl00$ContentPlaceHolder1$pnlPanel|ctl00$ContentPlaceHolder1$ddlAgentes',
-                __EVENTTARGET: 'ctl00$ContentPlaceHolder1$ddlAgentes'
             });
 
             const req = await cookieManager.fetch(PAGE.URL, {
@@ -145,9 +146,6 @@ class StatementCrawler {
 
             const reqInstitutionText = await req.text();
             const reqInstitutionDOM = cheerio.load(reqInstitutionText);
-
-            const updtForm = CeiUtils.extractUpdateForm(reqInstitutionText);
-            CeiUtils.updateFieldsDOM(domPage, updtForm);
 
             const accounts = reqInstitutionDOM(PAGE.SELECT_ACCOUNT_OPTIONS)
                 .map((_, option) => option.attribs.value).get()
@@ -165,39 +163,49 @@ class StatementCrawler {
                     .map((_, option) => option.attribs.value)
                     .get();
 
-                /* istanbul ignore next */
-                const minDateStr = String(months.shift() || '').replace(' 00:00:00', '');
-                const minDate = CeiUtils.getDateFromInput(minDateStr);
+                let statement = {
+                    assetsCustody: [],
+                    assetsGuarantee: [],
+                };
 
-                /* istanbul ignore next */
-                const maxDateStr = String(months.pop() || '').replace(' 00:00:00', '');
-                const maxDate = CeiUtils.getDateFromInput(maxDateStr);
+                if (months.length > 0) {
+                    const updtForm = CeiUtils.extractUpdateForm(reqInstitutionText);
+                    CeiUtils.updateFieldsDOM(domPage, updtForm);
 
-                let newDate = new Date(date);
+                    /* istanbul ignore next */
+                    const minDateStr = String(months.shift() || '').replace(' 00:00:00', '');
+                    const minDate = CeiUtils.getDateFromInput(minDateStr);
 
-                // Prevent date out of bound if parameter is set
-                if (options.capDates && date < minDate) {
-                    newDate = minDate;
+                    /* istanbul ignore next */
+                    const maxDateStr = String(months.pop() || '').replace(' 00:00:00', '');
+                    const maxDate = CeiUtils.getDateFromInput(maxDateStr);
+
+                    let newDate = new Date(date);
+
+                    // Prevent date out of bound if parameter is set
+                    if (options.capDates && date < minDate) {
+                        newDate = minDate;
+                    }
+
+                    if (options.capDates && date > maxDate) {
+                        newDate = maxDate;
+                    }
+
+                    // get last day of month
+                    newDate = new Date(newDate.getFullYear(), newDate.getMonth() + 1, 0);
+                    newDate = CeiUtils.getDateForInput(newDate);
+
+                    /* istanbul ignore next */
+                    if (traceOperations)
+                        console.log(`Selecting month ${newDate}`);
+
+                    domPage(PAGE.SELECT_MONTH).attr('value', newDate);
+
+                    const fileName = `${institution.value}_${account}.xls`;
+                    statement = await this._getFileAndParse(options, domPage, cookieManager, traceOperations, fileName);
+
+                    CeiUtils.removeFile(options, fileName);
                 }
-
-                if (options.capDates && date > maxDate) {
-                    newDate = maxDate;
-                }
-
-                // get last day of month
-                newDate = new Date(newDate.getFullYear(), newDate.getMonth() + 1, 0);
-                newDate = CeiUtils.getDateForInput(newDate);
-
-                /* istanbul ignore next */
-                if (traceOperations)
-                    console.log(`Selecting month ${newDate}`);
-
-                domPage(PAGE.SELECT_MONTH).attr('value', newDate);
-
-                const fileName = `${institution.value}_${account}.xls`;
-                const statement = await this._getFileAndParse(options, domPage, cookieManager, traceOperations, fileName);
-
-                CeiUtils.removeFile(options, fileName);
 
                 // Save the result
                 result.push({
@@ -282,6 +290,9 @@ class StatementCrawler {
         dom('#__LASTFOCUS')
             .attr('value', '');
 
+        dom('#__EVENTARGUMENT')
+            .attr('value', '');
+
         const formDataStatement = CeiUtils.extractFormDataFromDOM(dom, FETCH_FORMS.STATEMENT_ACCOUNT, {
             ctl00$ContentPlaceHolder1$scptManager: 'ctl00$ContentPlaceHolder1$pnlPanel|ctl00$ContentPlaceHolder1$btnVersaoEXCEL',
         });
@@ -311,8 +322,16 @@ class StatementCrawler {
                 .replace("GotoDownloadPage( '/Relatorio/Relatorio.aspx?ID=','", '')
                 .replace("');", '');
 
+            /* istanbul ignore next */
+            if (traceOperations)
+                console.log(`Starting download report ${reportId}`);
+
             const reportResponse = await cookieManager.fetch(`${PAGE.REPORT_URL}${reportId}`);
             const filePath = await CeiUtils.saveFile(options, fileName, reportResponse.body);
+
+            /* istanbul ignore next */
+            if (traceOperations)
+                console.log(`Report ${reportId} saved in ${filePath}`);
 
             const assetsCustody = CeiUtils.parseSheetData(
                 filePath,
@@ -331,6 +350,10 @@ class StatementCrawler {
                 ASSETS_CUSTODY_HEADER,
                 true
             );
+
+            /* istanbul ignore next */
+            if (traceOperations)
+                console.log(`Parser report and found ${assetsCustody.length} asset of custody and ${assetsGuarantee.length} asset of guarantee`);
 
             Object.assign(result, {
                 assetsCustody,
